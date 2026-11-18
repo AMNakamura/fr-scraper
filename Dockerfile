@@ -9,4 +9,5 @@ COPY apis/ ./apis/
 
 # No CMD needed. Default, just run the apis.
 # Placeholder for future changes.
-CMD ["python", "--version"]
+
+ENTRYPOINT ["python", "main.py"]
