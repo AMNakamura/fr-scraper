@@ -8,7 +8,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy only selected scripts
-COPY main.py
+COPY main.py .
 COPY apis/ ./apis/
 # COPY scrapers/ ./scrapers/
 
