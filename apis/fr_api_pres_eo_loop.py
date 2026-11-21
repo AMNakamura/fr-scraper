@@ -72,28 +72,45 @@ def load_seen_keys(jsonl_path: str, key_field: str):
 
 def fetch_docs_for_query(
     session: requests.Session,
-    year: int,
+    year: int | None,                 # <-- allow None if using date window only
     pres: str | None,
     page: int,
     per_page: int,
     timeout_seconds: float,
     sleep_seconds: float,
     verbose: bool,
+    start_date: str | None = None,  # <-- NEW (YYYY-MM-DD)
+    end_date: str | None = None,    # <-- NEW (YYYY-MM-DD)
 ):
-
-# --------------------------------------------------
-# Minimal query for exploration.
-# Uses year/type/president_document_type filters
-# --------------------------------------------------
     params = {
-        "fields[]": ["title","document_number","executive_order_number","signing_date","publication_date","raw_text_url"],
+        "fields[]": [
+            "title",
+            "document_number",
+            "executive_order_number",
+            "signing_date",
+            "publication_date",
+            "raw_text_url",
+        ],
         "per_page": per_page,
         "page": page,
         "order": "executive_order_number",
-        "conditions[publication_date][year]": year,
+        # NOTE: year filter may be added below depending on mode
         "conditions[type][]": "PRESDOCU",
         "conditions[presidential_document_type][]": "executive_order",
     }
+
+    # Preserve old behavior if no rolling window dates are supplied
+    if start_date is None and end_date is None:
+        params["conditions[publication_date][year]"] = year
+
+    # New rolling window behavior (scheduled runs)
+    # (Assumes FR API supports publication_date gte/lte style like:
+    #  conditions[publication_date][gte]=YYYY-MM-DD
+    #  conditions[publication_date][lte]=YYYY-MM-DD)
+    if start_date:
+        params["conditions[publication_date][gte]"] = start_date
+    if end_date:
+        params["conditions[publication_date][lte]"] = end_date
 
     if pres:
         params["conditions[president][]"] = pres
@@ -113,7 +130,6 @@ def fetch_docs_for_query(
         print(f"[api] status={r.status_code}")
 
     if r.status_code != 200:
-        # Print response body to help debug invalid condition params if any
         print("---- API ERROR ----")
         print("url:", r.url)
         print("status:", r.status_code)
@@ -122,7 +138,6 @@ def fetch_docs_for_query(
 
     data = r.json()
 
-    # Some FR API endpoints use results; others may use docs.
     docs = data.get("results")
     if docs is None:
         docs = data.get("docs")
@@ -153,24 +168,45 @@ def main():
     ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args()
 
+    run_start_date = os.environ.get("RUN_START_DATE", "").strip() or None  # YYYY-MM-DD
+    run_end_date = os.environ.get("RUN_END_DATE", "").strip() or None  # YYYY-MM-DD
+    scheduled_mode = (run_start_date is not None) and (run_end_date is not None)
+
+    if not scheduled_mode:
+        if args.end_year is None:
+            args.end_year = datetime.utcnow().year
+
+        start_year = 1994
+        if args.year is not None:
+            years = [args.year]
+        else:
+            years = list(year_range(start_year, args.end_year))
+    else:
+        # Scheduled run: crawl the rolling date window once.
+        # Use a single sentinel "year" so the rest of the code doesn't crash,
+        # but compute out_dir differently below.
+        years = [None]
+
+    if args.verbose:
+        print(f"[mode] scheduled_mode={scheduled_mode} RUN_START_DATE={run_start_date} RUN_END_DATE={run_end_date}")
+
+    if args.verbose:
+        print(f"[mode] RUN_START_DATE={run_start_date} RUN_END_DATE={run_end_date}")
+
+
     presidents = [args.pres] if args.pres else PRESIDENTS
     if args.pres and args.pres not in PRESIDENTS and args.verbose:
         print(f"[warn] --pres={args.pres} not in known list; continuing anyway.")
-
-    if args.end_year is None:
-        args.end_year = datetime.utcnow().year
-
-    start_year = 1994
-    if args.year is not None:
-        years = [args.year]
-    else:
-        years = list(year_range(start_year, args.end_year))
 
     key_field = "document_number"
 
     for pres_slug in presidents:
         for year in years:
-            out_dir = os.path.join(args.out_prefix, str(year))
+            if scheduled_mode:
+                out_dir = args.out_prefix  # post to root
+            else:
+                out_dir = os.path.join(args.out_prefix, str(year))  # manual year dirs
+
             ensure_dir(out_dir)
 
             suffix = os.environ.get("OUTPUT_SUFFIX", "").strip()
@@ -194,13 +230,15 @@ def main():
             for page in range(1, args.max_pages + 1):
                 docs, raw_payload = fetch_docs_for_query(
                     session=session,
-                    year=year,
-                    pres=pres_slug,  # <-- add this
+                    year=year if not scheduled_mode else None,  # year=None for scheduled window
+                    pres=pres_slug,
                     page=page,
                     per_page=args.api_per_page,
                     timeout_seconds=args.timeout_seconds,
                     sleep_seconds=args.sleep_seconds,
                     verbose=args.verbose,
+                    start_date=run_start_date,
+                    end_date=run_end_date,
                 )
 
                 if not docs:
