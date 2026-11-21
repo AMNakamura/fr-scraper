@@ -175,7 +175,13 @@ def main():
             out_dir = os.path.join(args.out_prefix, str(year))
             ensure_dir(out_dir)
 
-            out_path = os.path.join(out_dir, f"metadata_{pres_slug}.jsonl")
+            suffix = os.environ.get("OUTPUT_SUFFIX", "").strip()
+
+            if suffix:
+                out_path = os.path.join(out_dir, f"metadata_{pres_slug}_{suffix}.jsonl")
+            else:
+                out_path = os.path.join(out_dir, f"metadata_{pres_slug}.jsonl")
+
             seen = load_seen_keys(out_path, key_field)
 
             if args.verbose:

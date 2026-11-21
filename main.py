@@ -2,7 +2,9 @@
 # Script: main.py
 # Purpose: Run selected scripts. Save output to S3 buckets
 # --------------------------------------------------------------------
-
+RUN_START_DATE = os.environ.get("RUN_START_DATE", "").strip()  # e.g. 2026-11-15
+RUN_END_DATE   = os.environ.get("RUN_END_DATE", "").strip()    # e.g. 2026-11-21
+OUTPUT_SUFFIX  = os.environ.get("OUTPUT_SUFFIX", "").strip()  # e.g. 2026-11-15_to_2026-11-21
 
 import os
 import sys
@@ -36,7 +38,16 @@ def upload_dir(s3_client, local_dir: Path, s3_prefix: str):
 
 def run_script(script_path: str):
     print(f"\n=== Running {script_path} ===", flush=True)
-    subprocess.check_call([sys.executable, script_path])
+
+    child_env = os.environ.copy()
+
+    if RUN_START_DATE and RUN_END_DATE:
+        child_env["RUN_START_DATE"] = RUN_START_DATE
+        child_env["RUN_END_DATE"] = RUN_END_DATE
+        child_env["OUTPUT_SUFFIX"] = f"{RUN_START_DATE}_to_{RUN_END_DATE}"
+    # if not set, scheduled naming won’t be enabled (manual test unchanged)
+
+    subprocess.check_call([sys.executable, script_path], env=child_env)
 
 def main():
     s3 = boto3.client("s3")
