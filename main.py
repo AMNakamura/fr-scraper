@@ -16,7 +16,7 @@ S3_BUCKET = os.environ.get("S3_BUCKET", "congress-s3-20261031")
 S3_BASE_PREFIX = os.environ.get("S3_BASE_PREFIX", "data/raw")  # <— match S3 layout
 
 PAIRS = [
-    ("apis/fr_apr_pres_eo_loop.py", "./data/raw/eo_html", "eo_html"),
+    ("apis/fr_api_pres_eo_loop.py", "./data/raw/eo_html", "eo_html"),
     ("apis/fr_api_pres_memo_loop.py", "./data/raw/memo_html", "memo_html"),
 ]
 
